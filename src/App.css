@@ -85,7 +85,9 @@ body {
 
 .floor-shell {
   width: 100%;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding-bottom: 8px;
 }
 
@@ -98,7 +100,6 @@ body {
   border-radius: 16px;
   overflow: hidden;
   margin-top: 8px;
-  touch-action: none;
 }
 
 .fixed,
