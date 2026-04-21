@@ -1,130 +1,68 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
-const TABLE_SIZES = [2, 4, 6, 8, 10];
+const REGULAR_TABLE_SIZES = [1, 2, 4, 6, 8, 10];
+const SUPER_TABLE_SIZES = [1, 2, 4];
+
 const STORAGE_KEY = "hale-ohana-layout-tables";
 const ZONES_KEY = "hale-ohana-layout-zones";
 
 const DEFAULT_ZONES = [
-  {
-    id: "hibiscus",
-    label: "Hibiscus",
-    x: 30,
-    y: 140,
-    width: 330,
-    height: 190,
-    rotate: -10,
-  },
-  {
-    id: "bop",
-    label: "BOP",
-    x: 40,
-    y: 280,
-    width: 380,
-    height: 150,
-    rotate: -14,
-  },
-  {
-    id: "crown",
-    label: "Crown",
-    x: 520,
-    y: 260,
-    width: 350,
-    height: 110,
-    rotate: 0,
-  },
-  {
-    id: "gardenia",
-    label: "Gardenia",
-    x: 980,
-    y: 220,
-    width: 290,
-    height: 120,
-    rotate: 0,
-  },
-  {
-    id: "ginger2",
-    label: "Ginger 2",
-    x: 540,
-    y: 430,
-    width: 280,
-    height: 150,
-    rotate: 0,
-  },
-  {
-    id: "centerbar",
-    label: "Ginger 1",
-    x: 860,
-    y: 410,
-    width: 290,
-    height: 150,
-    rotate: 0,
-  },
-  {
-    id: "ilima",
-    label: "Ilima",
-    x: 1260,
-    y: 300,
-    width: 150,
-    height: 230,
-    rotate: 0,
-  },
-  {
-    id: "orchid",
-    label: "Orchid",
-    x: 1320,
-    y: 220,
-    width: 260,
-    height: 290,
-    rotate: 0,
-  },
+  { id: "hibiscus", label: "Hibiscus", x: 30, y: 140, width: 330, height: 190, rotate: -10 },
+  { id: "bop", label: "BOP", x: 40, y: 280, width: 380, height: 150, rotate: -14 },
+  { id: "crown", label: "Crown", x: 520, y: 260, width: 350, height: 110, rotate: 0 },
+  { id: "gardenia", label: "Gardenia", x: 980, y: 220, width: 290, height: 120, rotate: 0 },
+  { id: "ginger2", label: "Ginger 2", x: 540, y: 430, width: 280, height: 150, rotate: 0 },
+  { id: "centerbar", label: "Ginger 1", x: 860, y: 410, width: 290, height: 150, rotate: 0 },
+  { id: "ilima", label: "Ilima", x: 1260, y: 300, width: 150, height: 230, rotate: 0 },
+  { id: "orchid", label: "Orchid", x: 1320, y: 220, width: 260, height: 290, rotate: 0 },
 ];
 
-function getTableStyle(size, status) {
-  const color = status === "occupied" ? "#ef4444" : "#22c55e";
+function getInitials(name) {
+  if (!name.trim()) return "";
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 3)
+    .map((word) => word[0]?.toUpperCase() || "")
+    .join("");
+}
+
+function getTableStyle(size, status, guestType) {
+  let fill;
+
+  if (guestType === "Regular") {
+    fill = status === "occupied" ? "#ef4444" : "#22c55e";
+  } else {
+    fill = status === "occupied" ? "#be123c" : "#7c3aed";
+  }
+
+  const base = {
+    background: fill,
+    border: "2px solid rgba(255,255,255,0.95)",
+  };
+
+  if (size === 1) {
+    return { ...base, width: 28, height: 28, borderRadius: "50%" };
+  }
 
   if (size === 2) {
-    return {
-      width: 34,
-      height: 34,
-      background: color,
-      borderRadius: "50%",
-    };
+    return { ...base, width: 34, height: 34, borderRadius: "50%" };
   }
 
   if (size === 4) {
-    return {
-      width: 46,
-      height: 46,
-      background: color,
-      borderRadius: "10px",
-    };
+    return { ...base, width: 46, height: 46, borderRadius: "10px" };
   }
 
   if (size === 6) {
-    return {
-      width: 60,
-      height: 38,
-      background: color,
-      borderRadius: "10px",
-    };
+    return { ...base, width: 60, height: 38, borderRadius: "10px" };
   }
 
   if (size === 8) {
-    return {
-      width: 70,
-      height: 42,
-      background: color,
-      borderRadius: "10px",
-    };
+    return { ...base, width: 70, height: 42, borderRadius: "10px" };
   }
 
-  return {
-    width: 84,
-    height: 46,
-    background: color,
-    borderRadius: "10px",
-  };
+  return { ...base, width: 84, height: 46, borderRadius: "10px" };
 }
 
 export default function App() {
@@ -134,7 +72,10 @@ export default function App() {
   const [draggingId, setDraggingId] = useState(null);
   const [editingZones, setEditingZones] = useState(false);
   const [activeZoneId, setActiveZoneId] = useState(null);
-  const [zoneMode, setZoneMode] = useState(null); // drag | resize
+  const [zoneMode, setZoneMode] = useState(null);
+  const [selectedTableId, setSelectedTableId] = useState(null);
+  const [regularCustomSize, setRegularCustomSize] = useState("");
+  const [superCustomSize, setSuperCustomSize] = useState("");
   const floorRef = useRef(null);
 
   useEffect(() => {
@@ -158,28 +99,85 @@ export default function App() {
     }
   }, []);
 
+  const selectedTable =
+    tables.find((table) => table.id === selectedTableId) || null;
+
   const showMessage = (text) => {
     setMessage(text);
     setTimeout(() => setMessage(""), 2000);
   };
 
-  const addTable = (size) => {
+  const addTable = (size, guestType = "Regular") => {
+    const normalizedSize = Number(size);
+    if (!normalizedSize || normalizedSize < 1) return;
+
     const id = Date.now() + Math.random();
 
-    setTables((prev) => [
-      ...prev,
-      {
-        id,
-        size,
-        x: 520,
-        y: 300,
-        status: "available",
-      },
-    ]);
+    const newTable = {
+      id,
+      size: normalizedSize,
+      x: 520,
+      y: 300,
+      status: "available",
+      fullName: "",
+      shortLabel: "",
+      guestType,
+    };
+
+    setTables((prev) => [...prev, newTable]);
+    setSelectedTableId(id);
+  };
+
+  const addCustomRegularTable = () => {
+    addTable(regularCustomSize, "Regular");
+    setRegularCustomSize("");
+  };
+
+  const addCustomSuperTable = () => {
+    addTable(superCustomSize, "Super");
+    setSuperCustomSize("");
+  };
+
+  const updateSelectedTable = (field, value) => {
+    if (!selectedTableId) return;
+
+    setTables((prev) =>
+      prev.map((table) =>
+        table.id === selectedTableId
+          ? {
+              ...table,
+              [field]: value,
+            }
+          : table
+      )
+    );
+  };
+
+  const useInitialsForSelected = () => {
+    if (!selectedTable) return;
+    updateSelectedTable("shortLabel", getInitials(selectedTable.fullName));
+  };
+
+  const clearGuestInfo = () => {
+    if (!selectedTableId) return;
+
+    setTables((prev) =>
+      prev.map((table) =>
+        table.id === selectedTableId
+          ? {
+              ...table,
+              fullName: "",
+              shortLabel: "",
+              guestType: "Regular",
+            }
+          : table
+      )
+    );
   };
 
   const resetLayout = () => {
     setTables([]);
+    setSelectedTableId(null);
     showMessage("Current layout cleared.");
   };
 
@@ -225,6 +223,9 @@ export default function App() {
 
   const deleteTable = (id) => {
     setTables((prev) => prev.filter((table) => table.id !== id));
+    if (selectedTableId === id) {
+      setSelectedTableId(null);
+    }
   };
 
   const toggleStatus = (id) => {
@@ -233,7 +234,8 @@ export default function App() {
         table.id === id
           ? {
               ...table,
-              status: table.status === "available" ? "occupied" : "available",
+              status:
+                table.status === "available" ? "occupied" : "available",
             }
           : table
       )
@@ -249,9 +251,7 @@ export default function App() {
 
     setTables((prev) =>
       prev.map((table) =>
-        table.id === draggingId
-          ? { ...table, x, y }
-          : table
+        table.id === draggingId ? { ...table, x, y } : table
       )
     );
   };
@@ -283,19 +283,20 @@ export default function App() {
           height: Math.max(60, y - zone.y),
         }));
       }
+
       if (zoneMode === "rotate") {
-  updateZone(activeZoneId, (zone) => {
-    const centerX = zone.x + zone.width / 2;
-    const centerY = zone.y + zone.height / 2;
+        updateZone(activeZoneId, (zone) => {
+          const centerX = zone.x + zone.width / 2;
+          const centerY = zone.y + zone.height / 2;
 
-    const angle =
-      Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
+          const angle =
+            Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
 
-    return {
-      rotate: angle,
-    };
-  });
-}
+          return {
+            rotate: angle,
+          };
+        });
+      }
 
       return;
     }
@@ -313,39 +314,172 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="toolbar">
-        {TABLE_SIZES.map((size) => (
-          <button key={size} onClick={() => addTable(size)}>
-            +{size}
-          </button>
-        ))}
-        <button onClick={saveLayout}>Save</button>
-        <button onClick={loadLayout}>Load</button>
-        <button className="zone-btn" onClick={() => setEditingZones((prev) => !prev)}>
-          {editingZones ? "Done Editing Zones" : "Edit Zones"}
-        </button>
-        <button onClick={resetZones}>Reset Zones</button>
-        <button className="reset-btn" onClick={resetLayout}>
-          Reset Tables
-        </button>
-        <button className="delete-btn" onClick={clearSavedLayout}>
-          Clear Saved
-        </button>
+      <div className="page-title-wrap">
+        <h1 className="page-title">Hale Ohana Seating Layout</h1>
+        <p className="page-subtitle">
+          Regular tables on top, Super tables below, then live controls.
+        </p>
       </div>
 
-      <div className="legend">
-        <span className="legend-item">
-          <span className="dot green"></span> Available
-        </span>
-        <span className="legend-item">
-          <span className="dot red"></span> Occupied
-        </span>
-        <span className="hint">
-          {editingZones
-            ? "Zone mode: drag zone body to move, drag bottom-right handle to resize"
-            : "Double click = green/red | Right click = delete"}
-        </span>
+      <div className="toolbar-row">
+        <div className="toolbar-group-label">Regular</div>
+        <div className="toolbar">
+          {REGULAR_TABLE_SIZES.map((size) => (
+            <button
+              key={`regular-${size}`}
+              className="regular-btn"
+              onClick={() => addTable(size, "Regular")}
+            >
+              +{size}
+            </button>
+          ))}
+
+          <input
+            className="custom-size-input"
+            type="number"
+            min="1"
+            placeholder="Custom"
+            value={regularCustomSize}
+            onChange={(e) => setRegularCustomSize(e.target.value)}
+          />
+          <button className="regular-btn" onClick={addCustomRegularTable}>
+            + Custom
+          </button>
+        </div>
       </div>
+
+      <div className="toolbar-row">
+        <div className="toolbar-group-label toolbar-group-label-super">Supers</div>
+        <div className="toolbar">
+          {SUPER_TABLE_SIZES.map((size) => (
+            <button
+              key={`super-${size}`}
+              className="super-btn"
+              onClick={() => addTable(size, "Super")}
+            >
+              +{size}
+            </button>
+          ))}
+
+          <input
+            className="custom-size-input super-input"
+            type="number"
+            min="1"
+            placeholder="Custom"
+            value={superCustomSize}
+            onChange={(e) => setSuperCustomSize(e.target.value)}
+          />
+          <button className="super-btn" onClick={addCustomSuperTable}>
+            + Custom
+          </button>
+        </div>
+      </div>
+
+      <div className="controls-row">
+        <div className="legend">
+          <span className="legend-item">
+            <span className="dot green"></span> Available
+          </span>
+          <span className="legend-item">
+            <span className="dot red"></span> Occupied
+          </span>
+          <span className="legend-item">
+            <span className="dot super-dot"></span> Super guest
+          </span>
+          <span className="hint">
+            {editingZones
+              ? "Zone mode: drag body to move, blue square to resize, yellow circle to rotate"
+              : "Click table to edit guest | Double click = available/occupied | Right click = delete"}
+          </span>
+        </div>
+
+        <div className="toolbar toolbar-actions">
+          <button onClick={saveLayout}>Save</button>
+          <button onClick={loadLayout}>Load</button>
+          <button
+            className="zone-btn"
+            onClick={() => setEditingZones((prev) => !prev)}
+          >
+            {editingZones ? "Done Editing Zones" : "Edit Zones"}
+          </button>
+          <button onClick={resetZones}>Reset Zones</button>
+          <button className="reset-btn" onClick={resetLayout}>
+            Reset Tables
+          </button>
+          <button className="delete-btn" onClick={clearSavedLayout}>
+            Clear Saved
+          </button>
+        </div>
+      </div>
+
+      {selectedTable && (
+        <div className="editor-panel">
+          <div className="editor-title">
+            Editing table {selectedTable.size}
+          </div>
+
+          <div className="editor-grid">
+            <label>
+              Full guest name
+              <input
+                type="text"
+                value={selectedTable.fullName}
+                onChange={(e) =>
+                  updateSelectedTable("fullName", e.target.value)
+                }
+                placeholder="Anderson Belcher"
+              />
+            </label>
+
+            <label>
+              Short label on table
+              <input
+                type="text"
+                value={selectedTable.shortLabel}
+                onChange={(e) =>
+                  updateSelectedTable(
+                    "shortLabel",
+                    e.target.value.toUpperCase().slice(0, 4)
+                  )
+                }
+                placeholder="AB"
+              />
+            </label>
+
+            <label>
+              Guest type
+              <select
+                value={selectedTable.guestType}
+                onChange={(e) =>
+                  updateSelectedTable("guestType", e.target.value)
+                }
+              >
+                <option>Regular</option>
+                <option>Super</option>
+              </select>
+            </label>
+
+            <label>
+              Status
+              <select
+                value={selectedTable.status}
+                onChange={(e) =>
+                  updateSelectedTable("status", e.target.value)
+                }
+              >
+                <option value="available">Available</option>
+                <option value="occupied">Occupied</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="editor-actions">
+            <button onClick={useInitialsForSelected}>Use Initials</button>
+            <button onClick={clearGuestInfo}>Clear Guest Info</button>
+            <button onClick={() => setSelectedTableId(null)}>Done</button>
+          </div>
+        </div>
+      )}
 
       {message && <div className="message">{message}</div>}
 
@@ -380,43 +514,44 @@ export default function App() {
               }}
             >
               {zone.label}
-              {editingZones && (
-  <>
-    {/* Resize handle */}
-    <div
-      className="resize-handle"
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        setActiveZoneId(zone.id);
-        setZoneMode("resize");
-      }}
-    />
 
-    {/* Rotate handle */}
-    <div
-      className="rotate-handle"
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        setActiveZoneId(zone.id);
-        setZoneMode("rotate");
-      }}
-    />
-  </>
-)}
+              {editingZones && (
+                <>
+                  <div
+                    className="resize-handle"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setActiveZoneId(zone.id);
+                      setZoneMode("resize");
+                    }}
+                  />
+                  <div
+                    className="rotate-handle"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setActiveZoneId(zone.id);
+                      setZoneMode("rotate");
+                    }}
+                  />
+                </>
+              )}
             </div>
           ))}
 
           {tables.map((table) => (
             <div
               key={table.id}
-              className="table"
+              className={`table ${
+                selectedTableId === table.id ? "table-selected" : ""
+              }`}
               style={{
-                ...getTableStyle(table.size, table.status),
+                ...getTableStyle(table.size, table.status, table.guestType),
                 left: `${table.x}px`,
                 top: `${table.y}px`,
               }}
+              onClick={() => setSelectedTableId(table.id)}
               onPointerDown={(e) => {
                 if (editingZones) return;
                 e.preventDefault();
@@ -428,8 +563,9 @@ export default function App() {
                 e.preventDefault();
                 deleteTable(table.id);
               }}
+              title={table.fullName || `Table ${table.size}`}
             >
-              {table.size}
+              {table.shortLabel || table.size}
             </div>
           ))}
         </div>
