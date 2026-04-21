@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import { db } from "./firebase";
+import { ref, set, onValue } from "firebase/database";
 
 const REGULAR_TABLE_SIZES = [1, 2, 4, 6, 8, 10];
 const SUPER_TABLE_SIZES = [1, 2, 4];
 
 const STORAGE_KEY = "hale-ohana-layout-tables";
 const ZONES_KEY = "hale-ohana-layout-zones";
+const FIREBASE_LAYOUT_PATH = "layouts/main";
 
 const DEFAULT_ZONES = [
   { id: "hibiscus", label: "Hibiscus", x: 30, y: 140, width: 330, height: 190, rotate: -10 },
@@ -42,25 +45,11 @@ function getTableStyle(size, status, guestType) {
     border: "2px solid rgba(255,255,255,0.95)",
   };
 
-  if (size === 1) {
-    return { ...base, width: 28, height: 28, borderRadius: "50%" };
-  }
-
-  if (size === 2) {
-    return { ...base, width: 34, height: 34, borderRadius: "50%" };
-  }
-
-  if (size === 4) {
-    return { ...base, width: 46, height: 46, borderRadius: "10px" };
-  }
-
-  if (size === 6) {
-    return { ...base, width: 60, height: 38, borderRadius: "10px" };
-  }
-
-  if (size === 8) {
-    return { ...base, width: 70, height: 42, borderRadius: "10px" };
-  }
+  if (size === 1) return { ...base, width: 28, height: 28, borderRadius: "50%" };
+  if (size === 2) return { ...base, width: 34, height: 34, borderRadius: "50%" };
+  if (size === 4) return { ...base, width: 46, height: 46, borderRadius: "10px" };
+  if (size === 6) return { ...base, width: 60, height: 38, borderRadius: "10px" };
+  if (size === 8) return { ...base, width: 70, height: 42, borderRadius: "10px" };
 
   return { ...base, width: 84, height: 46, borderRadius: "10px" };
 }
@@ -77,6 +66,10 @@ export default function App() {
   const [regularCustomSize, setRegularCustomSize] = useState("");
   const [superCustomSize, setSuperCustomSize] = useState("");
   const floorRef = useRef(null);
+
+  const layoutRef = ref(db, FIREBASE_LAYOUT_PATH);
+  const isInteractingRef = useRef(false);
+  const ignoreNextRemoteRef = useRef(false);
 
   useEffect(() => {
     const savedTables = localStorage.getItem(STORAGE_KEY);
@@ -99,12 +92,51 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = onValue(layoutRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      if (ignoreNextRemoteRef.current) {
+        ignoreNextRemoteRef.current = false;
+        return;
+      }
+
+      if (isInteractingRef.current) return;
+
+      if (data.tables) {
+        setTables(data.tables);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.tables));
+      }
+
+      if (data.zones) {
+        setZones(data.zones);
+        localStorage.setItem(ZONES_KEY, JSON.stringify(data.zones));
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const selectedTable =
     tables.find((table) => table.id === selectedTableId) || null;
 
   const showMessage = (text) => {
     setMessage(text);
     setTimeout(() => setMessage(""), 2000);
+  };
+
+  const syncToFirebase = async (nextTables, nextZones, showSavedMessage = false) => {
+    try {
+      ignoreNextRemoteRef.current = true;
+      await set(layoutRef, { tables: nextTables, zones: nextZones });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextTables));
+      localStorage.setItem(ZONES_KEY, JSON.stringify(nextZones));
+      if (showSavedMessage) showMessage("Live layout saved.");
+    } catch (error) {
+      console.error("Firebase sync error:", error);
+      showMessage("Firebase sync failed.");
+    }
   };
 
   const addTable = (size, guestType = "Regular") => {
@@ -124,8 +156,10 @@ export default function App() {
       guestType,
     };
 
-    setTables((prev) => [...prev, newTable]);
+    const nextTables = [...tables, newTable];
+    setTables(nextTables);
     setSelectedTableId(id);
+    syncToFirebase(nextTables, zones);
   };
 
   const addCustomRegularTable = () => {
@@ -141,16 +175,12 @@ export default function App() {
   const updateSelectedTable = (field, value) => {
     if (!selectedTableId) return;
 
-    setTables((prev) =>
-      prev.map((table) =>
-        table.id === selectedTableId
-          ? {
-              ...table,
-              [field]: value,
-            }
-          : table
-      )
+    const nextTables = tables.map((table) =>
+      table.id === selectedTableId ? { ...table, [field]: value } : table
     );
+
+    setTables(nextTables);
+    syncToFirebase(nextTables, zones);
   };
 
   const useInitialsForSelected = () => {
@@ -161,39 +191,42 @@ export default function App() {
   const clearGuestInfo = () => {
     if (!selectedTableId) return;
 
-    setTables((prev) =>
-      prev.map((table) =>
-        table.id === selectedTableId
-          ? {
-              ...table,
-              fullName: "",
-              shortLabel: "",
-              guestType: "Regular",
-            }
-          : table
-      )
+    const nextTables = tables.map((table) =>
+      table.id === selectedTableId
+        ? {
+            ...table,
+            fullName: "",
+            shortLabel: "",
+            guestType: "Regular",
+          }
+        : table
     );
+
+    setTables(nextTables);
+    syncToFirebase(nextTables, zones);
   };
 
   const resetLayout = () => {
     setTables([]);
     setSelectedTableId(null);
-    showMessage("Current layout cleared.");
+    syncToFirebase([], zones, true);
   };
 
   const saveLayout = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tables));
-    localStorage.setItem(ZONES_KEY, JSON.stringify(zones));
-    showMessage("Layout saved.");
+    syncToFirebase(tables, zones, true);
   };
 
   const loadLayout = () => {
     const savedTables = localStorage.getItem(STORAGE_KEY);
     const savedZones = localStorage.getItem(ZONES_KEY);
 
+    let nextTables = tables;
+    let nextZones = zones;
+
     if (savedTables) {
       try {
-        setTables(JSON.parse(savedTables));
+        nextTables = JSON.parse(savedTables);
+        setTables(nextTables);
       } catch (error) {
         console.error(error);
       }
@@ -201,45 +234,48 @@ export default function App() {
 
     if (savedZones) {
       try {
-        setZones(JSON.parse(savedZones));
+        nextZones = JSON.parse(savedZones);
+        setZones(nextZones);
       } catch (error) {
         console.error(error);
       }
     }
 
-    showMessage("Saved layout loaded.");
+    syncToFirebase(nextTables, nextZones, true);
   };
 
   const clearSavedLayout = () => {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(ZONES_KEY);
-    showMessage("Saved layout deleted.");
+    showMessage("Local backup deleted.");
   };
 
   const resetZones = () => {
     setZones(DEFAULT_ZONES);
-    showMessage("Zones reset.");
+    syncToFirebase(tables, DEFAULT_ZONES, true);
   };
 
   const deleteTable = (id) => {
-    setTables((prev) => prev.filter((table) => table.id !== id));
+    const nextTables = tables.filter((table) => table.id !== id);
+    setTables(nextTables);
     if (selectedTableId === id) {
       setSelectedTableId(null);
     }
+    syncToFirebase(nextTables, zones);
   };
 
   const toggleStatus = (id) => {
-    setTables((prev) =>
-      prev.map((table) =>
-        table.id === id
-          ? {
-              ...table,
-              status:
-                table.status === "available" ? "occupied" : "available",
-            }
-          : table
-      )
+    const nextTables = tables.map((table) =>
+      table.id === id
+        ? {
+            ...table,
+            status: table.status === "available" ? "occupied" : "available",
+          }
+        : table
     );
+
+    setTables(nextTables);
+    syncToFirebase(nextTables, zones);
   };
 
   const moveTable = (clientX, clientY) => {
@@ -288,13 +324,8 @@ export default function App() {
         updateZone(activeZoneId, (zone) => {
           const centerX = zone.x + zone.width / 2;
           const centerY = zone.y + zone.height / 2;
-
-          const angle =
-            Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
-
-          return {
-            rotate: angle,
-          };
+          const angle = Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
+          return { rotate: angle };
         });
       }
 
@@ -307,9 +338,19 @@ export default function App() {
   };
 
   const handlePointerUp = () => {
+    const finishedDraggingTable = draggingId !== null;
+    const finishedEditingZone = activeZoneId !== null;
+
     setDraggingId(null);
     setActiveZoneId(null);
     setZoneMode(null);
+    isInteractingRef.current = false;
+
+    if (finishedDraggingTable || finishedEditingZone) {
+      setTimeout(() => {
+        syncToFirebase(tables, zones);
+      }, 0);
+    }
   };
 
   return (
@@ -389,13 +430,13 @@ export default function App() {
           <span className="hint">
             {editingZones
               ? "Zone mode: drag body to move, blue square to resize, yellow circle to rotate"
-              : "Click table to edit guest | Double click = available/occupied | Right click = delete"}
+              : "Click table to edit guest | Double click = available/occupied | Right click = delete | Live sync is on"}
           </span>
         </div>
 
         <div className="toolbar toolbar-actions">
-          <button onClick={saveLayout}>Save</button>
-          <button onClick={loadLayout}>Load</button>
+          <button onClick={saveLayout}>Save Live</button>
+          <button onClick={loadLayout}>Load Local</button>
           <button
             className="zone-btn"
             onClick={() => setEditingZones((prev) => !prev)}
@@ -407,7 +448,7 @@ export default function App() {
             Reset Tables
           </button>
           <button className="delete-btn" onClick={clearSavedLayout}>
-            Clear Saved
+            Clear Local
           </button>
         </div>
       </div>
@@ -509,8 +550,10 @@ export default function App() {
               onPointerDown={(e) => {
                 if (!editingZones) return;
                 e.preventDefault();
+                isInteractingRef.current = true;
                 setActiveZoneId(zone.id);
                 setZoneMode("drag");
+                e.currentTarget.setPointerCapture?.(e.pointerId);
               }}
             >
               {zone.label}
@@ -522,8 +565,10 @@ export default function App() {
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
+                      isInteractingRef.current = true;
                       setActiveZoneId(zone.id);
                       setZoneMode("resize");
+                      e.currentTarget.setPointerCapture?.(e.pointerId);
                     }}
                   />
                   <div
@@ -531,8 +576,10 @@ export default function App() {
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
+                      isInteractingRef.current = true;
                       setActiveZoneId(zone.id);
                       setZoneMode("rotate");
+                      e.currentTarget.setPointerCapture?.(e.pointerId);
                     }}
                   />
                 </>
@@ -555,6 +602,7 @@ export default function App() {
               onPointerDown={(e) => {
                 if (editingZones) return;
                 e.preventDefault();
+                isInteractingRef.current = true;
                 setDraggingId(table.id);
                 e.currentTarget.setPointerCapture?.(e.pointerId);
               }}
