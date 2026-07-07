@@ -88,7 +88,15 @@ export default function App() {
 
   const [regularCustomSize, setRegularCustomSize] = useState("");
   const [superCustomSize, setSuperCustomSize] = useState("");
-
+  const [dailySetupRows, setDailySetupRows] = useState([
+    { pax: 2, count: 9 },
+    { pax: 4, count: 14 },
+    { pax: 6, count: 6 },
+    { pax: 8, count: 5 },
+    { pax: 10, count: 2 },
+    { pax: 11, count: 1 },
+  ]);
+  
   const [builderPartySize, setBuilderPartySize] = useState("20");
   const [builderPhysicalTables, setBuilderPhysicalTables] = useState("3");
   const [builderBookedName, setBuilderBookedName] = useState("");
@@ -340,16 +348,16 @@ export default function App() {
     const nextTables = tables.map((table) =>
       table.id === selectedTableId
         ? {
-            ...table,
-            fullName: "",
-            bookedName: "",
-            shortLabel: "",
-            serverInitials: "",
-            serverColor: "",
-            showServerOnTable: false,
-            showTableCountOnTable: false,
-            guestType: "Regular",
-          }
+          ...table,
+          fullName: "",
+          bookedName: "",
+          shortLabel: "",
+          serverInitials: "",
+          serverColor: "",
+          showServerOnTable: false,
+          showTableCountOnTable: false,
+          guestType: "Regular",
+        }
         : table
     );
 
@@ -435,9 +443,9 @@ export default function App() {
     const nextTables = tables.map((table) =>
       table.id === id
         ? {
-            ...table,
-            status: table.status === "available" ? "occupied" : "available",
-          }
+          ...table,
+          status: table.status === "available" ? "occupied" : "available",
+        }
         : table
     );
 
@@ -504,6 +512,81 @@ export default function App() {
     }
   };
 
+  const updateDailySetupRow = (index, field, value) => {
+    setDailySetupRows((prev) =>
+      prev.map((row, i) =>
+        i === index
+          ? {
+            ...row,
+            [field]: Number(value),
+          }
+          : row
+      )
+    );
+  };
+
+  const generateDailyTables = () => {
+    const newTables = [];
+    let x = 520;
+    let y = 300;
+    let column = 0;
+
+    dailySetupRows.forEach((row) => {
+      const pax = Number(row.pax);
+      const count = Number(row.count);
+
+      if (!pax || !count) return;
+
+      for (let i = 0; i < count; i++) {
+        newTables.push({
+          id: Date.now() + Math.random() + newTables.length,
+          size: pax,
+          partySize: pax,
+          physicalTables: 1,
+          serverInitials: "",
+          serverColor: "",
+          showServerOnTable: false,
+          showTableCountOnTable: false,
+          bookedName: "",
+          x: x + column * 95,
+          y,
+          status: "available",
+          fullName: "",
+          shortLabel: "",
+          guestType: "Regular",
+        });
+
+        column++;
+
+        if (column >= 8) {
+          column = 0;
+          y += 75;
+        }
+      }
+
+      column = 0;
+      y += 90;
+    });
+
+    if (newTables.length === 0) {
+      showMessage("Enter at least one table count.");
+      return;
+    }
+
+    const nextTables = [...tables, ...newTables];
+    setTables(nextTables);
+    syncToFirebase(nextTables, zones, true);
+    showMessage(`${newTables.length} tables generated.`);
+  };
+
+  const clearDailySetupCounts = () => {
+    setDailySetupRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        count: 0,
+      }))
+    );
+  };
   const handlePointerUp = () => {
     const finishedDraggingTable = draggingId !== null;
     const finishedEditingZone = activeZoneId !== null;
@@ -554,6 +637,56 @@ export default function App() {
 
           <input className="custom-size-input super-input" type="number" min="1" placeholder="Custom" value={superCustomSize} onChange={(e) => setSuperCustomSize(e.target.value)} />
           <button className="super-btn" onClick={addCustomSuperTable}>+ Custom</button>
+        </div>
+      </div>
+
+      <div className="daily-setup-builder">
+        <div>
+          <div className="toolbar-group-label daily-setup-label">
+            Daily Setup Generator
+          </div>
+          <p>
+            Enter today’s table counts from the daily setup sheet, then generate all tables at once.
+          </p>
+        </div>
+
+        <div className="daily-setup-grid">
+          {dailySetupRows.map((row, index) => (
+            <div className="daily-setup-card" key={index}>
+              <label>
+                Pax
+                <input
+                  type="number"
+                  min="1"
+                  value={row.pax}
+                  onChange={(e) =>
+                    updateDailySetupRow(index, "pax", e.target.value)
+                  }
+                />
+              </label>
+
+              <label>
+                Tables
+                <input
+                  type="number"
+                  min="0"
+                  value={row.count}
+                  onChange={(e) =>
+                    updateDailySetupRow(index, "count", e.target.value)
+                  }
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+
+        <div className="daily-setup-actions">
+          <button className="daily-setup-btn" onClick={generateDailyTables}>
+            Generate Daily Tables
+          </button>
+          <button className="delete-btn" onClick={clearDailySetupCounts}>
+            Clear Counts
+          </button>
         </div>
       </div>
 
