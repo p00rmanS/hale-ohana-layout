@@ -82,6 +82,7 @@ export default function App() {
   const [draggingId, setDraggingId] = useState(null);
   const [editingZones, setEditingZones] = useState(false);
   const [activeZoneId, setActiveZoneId] = useState(null);
+  const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [zoneMode, setZoneMode] = useState(null);
   const [selectedTableId, setSelectedTableId] = useState(null);
 
@@ -97,6 +98,9 @@ export default function App() {
   const [builderServerColor, setBuilderServerColor] = useState("");
   const [builderShowServer, setBuilderShowServer] = useState(false);
   const [builderShowTableCount, setBuilderShowTableCount] = useState(false);
+
+  const [newAreaName, setNewAreaName] = useState("");
+  const [selectedAreaName, setSelectedAreaName] = useState("");
 
   const floorRef = useRef(null);
   const latestTablesRef = useRef([]);
@@ -128,7 +132,8 @@ export default function App() {
 
     if (savedZones) {
       try {
-        setZones(JSON.parse(savedZones));
+        const parsedZones = JSON.parse(savedZones);
+        setZones(parsedZones);
       } catch (error) {
         console.error("Could not load saved zones:", error);
       }
@@ -163,6 +168,9 @@ export default function App() {
 
   const selectedTable =
     tables.find((table) => table.id === selectedTableId) || null;
+
+  const selectedZone =
+    zones.find((zone) => zone.id === selectedZoneId) || null;
 
   const showMessage = (text) => {
     setMessage(text);
@@ -252,6 +260,63 @@ export default function App() {
     showMessage("Large party created.");
   };
 
+  const addCustomArea = () => {
+    const label = newAreaName.trim() || "New Area";
+    const id = `custom-area-${Date.now()}`;
+
+    const newZone = {
+      id,
+      label,
+      x: 300,
+      y: 300,
+      width: 260,
+      height: 150,
+      rotate: 0,
+      custom: true,
+    };
+
+    const nextZones = [...zones, newZone];
+    setZones(nextZones);
+    setSelectedZoneId(id);
+    setSelectedAreaName(label);
+    setEditingZones(true);
+    setNewAreaName("");
+    syncToFirebase(tables, nextZones, true);
+  };
+
+  const renameSelectedArea = () => {
+    if (!selectedZoneId) {
+      showMessage("Select an area first.");
+      return;
+    }
+
+    const label = selectedAreaName.trim();
+    if (!label) {
+      showMessage("Enter an area name.");
+      return;
+    }
+
+    const nextZones = zones.map((zone) =>
+      zone.id === selectedZoneId ? { ...zone, label } : zone
+    );
+
+    setZones(nextZones);
+    syncToFirebase(tables, nextZones, true);
+  };
+
+  const deleteSelectedArea = () => {
+    if (!selectedZoneId) {
+      showMessage("Select an area first.");
+      return;
+    }
+
+    const nextZones = zones.filter((zone) => zone.id !== selectedZoneId);
+    setZones(nextZones);
+    setSelectedZoneId(null);
+    setSelectedAreaName("");
+    syncToFirebase(tables, nextZones, true);
+  };
+
   const updateSelectedTable = (field, value) => {
     if (!selectedTableId) return;
 
@@ -338,6 +403,8 @@ export default function App() {
 
   const resetZones = () => {
     setZones(DEFAULT_ZONES);
+    setSelectedZoneId(null);
+    setSelectedAreaName("");
     syncToFirebase(tables, DEFAULT_ZONES, true);
   };
 
@@ -458,7 +525,7 @@ export default function App() {
       <div className="page-title-wrap">
         <h1 className="page-title">Hale Ohana Seating Layout</h1>
         <p className="page-subtitle">
-          Regular, Supers, large parties, server colors, and live seating controls.
+          Regular, Supers, large parties, server colors, custom areas, and live seating controls.
         </p>
       </div>
 
@@ -565,6 +632,36 @@ export default function App() {
         </div>
       </div>
 
+      <div className="area-builder">
+        <div>
+          <div className="toolbar-group-label area-builder-label">Custom Area Creator</div>
+          <p>Add a temporary/custom area, then use Edit Zones to move, resize, or rotate it.</p>
+        </div>
+
+        <div className="area-builder-row">
+          <input
+            type="text"
+            value={newAreaName}
+            onChange={(e) => setNewAreaName(e.target.value)}
+            placeholder="New area name"
+          />
+          <button className="area-btn" onClick={addCustomArea}>+ Add Area</button>
+
+          <input
+            type="text"
+            value={selectedAreaName}
+            onChange={(e) => setSelectedAreaName(e.target.value)}
+            placeholder="Selected area name"
+          />
+          <button className="zone-btn" onClick={renameSelectedArea}>Rename Selected</button>
+          <button className="delete-btn" onClick={deleteSelectedArea}>Delete Selected Area</button>
+        </div>
+
+        <div className="area-builder-note">
+          Selected area: <strong>{selectedZone ? selectedZone.label : "None"}</strong>
+        </div>
+      </div>
+
       <div className="controls-row">
         <div className="legend">
           <span className="legend-item"><span className="dot green"></span> Regular Available</span>
@@ -572,7 +669,7 @@ export default function App() {
           <span className="legend-item"><span className="dot super-dot"></span> Super Available</span>
           <span className="hint">
             {editingZones
-              ? "Zone mode: drag body to move, blue square to resize, yellow circle to rotate"
+              ? "Zone mode: click area to select, drag body to move, blue square to resize, yellow circle to rotate"
               : "Click table to edit guest | Double click = available/occupied | Right click = delete | Live sync is on"}
           </span>
         </div>
@@ -715,7 +812,7 @@ export default function App() {
           {zones.map((zone) => (
             <div
               key={zone.id}
-              className={`zone dynamic-zone ${editingZones ? "editing" : ""}`}
+              className={`zone dynamic-zone ${editingZones ? "editing" : ""} ${selectedZoneId === zone.id ? "zone-selected" : ""}`}
               style={{
                 left: `${zone.x}px`,
                 top: `${zone.y}px`,
@@ -727,6 +824,8 @@ export default function App() {
                 if (!editingZones) return;
                 e.preventDefault();
                 isInteractingRef.current = true;
+                setSelectedZoneId(zone.id);
+                setSelectedAreaName(zone.label);
                 setActiveZoneId(zone.id);
                 setZoneMode("drag");
                 e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -742,6 +841,8 @@ export default function App() {
                       e.stopPropagation();
                       e.preventDefault();
                       isInteractingRef.current = true;
+                      setSelectedZoneId(zone.id);
+                      setSelectedAreaName(zone.label);
                       setActiveZoneId(zone.id);
                       setZoneMode("resize");
                       e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -753,6 +854,8 @@ export default function App() {
                       e.stopPropagation();
                       e.preventDefault();
                       isInteractingRef.current = true;
+                      setSelectedZoneId(zone.id);
+                      setSelectedAreaName(zone.label);
                       setActiveZoneId(zone.id);
                       setZoneMode("rotate");
                       e.currentTarget.setPointerCapture?.(e.pointerId);
