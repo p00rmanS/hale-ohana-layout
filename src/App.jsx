@@ -9,6 +9,7 @@ const LARGE_PARTY_SIZES = [14, 15, 16, 18, 19, 20, 25];
 
 const STORAGE_KEY = "hale-ohana-layout-tables";
 const ZONES_KEY = "hale-ohana-layout-zones";
+const SERVER_KEY = "hale-ohana-layout-servers";
 const FIREBASE_LAYOUT_PATH = "layouts/main";
 
 const SERVER_COLORS = [
@@ -110,9 +111,15 @@ export default function App() {
   const [newAreaName, setNewAreaName] = useState("");
   const [selectedAreaName, setSelectedAreaName] = useState("");
 
+  const [servers, setServers] = useState([]);
+  const [serverNameInput, setServerNameInput] = useState("");
+  const [serverInitialsInput, setServerInitialsInput] = useState("");
+  const [serverColorInput, setServerColorInput] = useState("#2563eb");
+
   const floorRef = useRef(null);
   const latestTablesRef = useRef([]);
   const latestZonesRef = useRef(DEFAULT_ZONES);
+  const latestServersRef = useRef([]);
 
   const layoutRef = ref(db, FIREBASE_LAYOUT_PATH);
   const isInteractingRef = useRef(false);
@@ -127,9 +134,14 @@ export default function App() {
   }, [zones]);
 
   useEffect(() => {
+    latestServersRef.current = servers;
+  }, [servers]);
+
+  useEffect(() => {
     const savedTables = localStorage.getItem(STORAGE_KEY);
     const savedZones = localStorage.getItem(ZONES_KEY);
-
+    const savedServers = localStorage.getItem(SERVER_KEY);
+    
     if (savedTables) {
       try {
         setTables(JSON.parse(savedTables));
@@ -144,6 +156,14 @@ export default function App() {
         setZones(parsedZones);
       } catch (error) {
         console.error("Could not load saved zones:", error);
+      }
+    }
+
+    if (savedServers) {
+      try {
+        setServers(JSON.parse(savedServers));
+      } catch (error) {
+        console.error("Could not load saved servers:", error);
       }
     }
   }, []);
@@ -169,6 +189,11 @@ export default function App() {
         setZones(data.zones);
         localStorage.setItem(ZONES_KEY, JSON.stringify(data.zones));
       }
+
+      if (data.servers) {
+        setServers(data.servers);
+        localStorage.setItem(SERVER_KEY, JSON.stringify(data.servers));
+      }
     });
 
     return () => unsubscribe();
@@ -180,22 +205,150 @@ export default function App() {
   const selectedZone =
     zones.find((zone) => zone.id === selectedZoneId) || null;
 
+  const serverWorkloads = servers.map((server) => {
+    const assignedTables = tables.filter(
+      (table) => table.serverInitials === server.initials
+    );
+
+    return {
+      ...server,
+      tableCount: assignedTables.length,
+      guestCount: assignedTables.reduce(
+        (total, table) => total + Number(table.partySize || table.size || 0),
+        0
+      ),
+    };
+  });
+
   const showMessage = (text) => {
     setMessage(text);
     setTimeout(() => setMessage(""), 2000);
   };
 
-  const syncToFirebase = async (nextTables, nextZones, showSavedMessage = false) => {
+  const syncToFirebase = async (
+    nextTables,
+    nextZones,
+    showSavedMessage = false,
+    nextServers = latestServersRef.current
+  ) => {
     try {
       ignoreNextRemoteRef.current = true;
-      await set(layoutRef, { tables: nextTables, zones: nextZones });
+      await set(layoutRef, {
+        tables: nextTables,
+        zones: nextZones,
+        servers: nextServers,
+      });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(nextTables));
       localStorage.setItem(ZONES_KEY, JSON.stringify(nextZones));
+      localStorage.setItem(SERVER_KEY, JSON.stringify(nextServers));
       if (showSavedMessage) showMessage("Live layout saved.");
     } catch (error) {
       console.error("Firebase sync error:", error);
       showMessage("Firebase sync failed.");
     }
+  };
+
+  const addServer = () => {
+    const initials = serverInitialsInput.trim().toUpperCase().slice(0, 2);
+    const name = serverNameInput.trim();
+
+    if (!initials) {
+      showMessage("Enter server initials.");
+      return;
+    }
+
+    const newServer = {
+      id: Date.now() + Math.random(),
+      initials,
+      name: name || initials,
+      color: serverColorInput || "#2563eb",
+    };
+
+    const withoutDuplicate = servers.filter(
+      (server) => server.initials !== initials
+    );
+
+    const nextServers = [...withoutDuplicate, newServer];
+    setServers(nextServers);
+    setServerNameInput("");
+    setServerInitialsInput("");
+    syncToFirebase(tables, zones, true, nextServers);
+  };
+
+  const removeServer = (serverInitials) => {
+    const nextServers = servers.filter(
+      (server) => server.initials !== serverInitials
+    );
+
+    const nextTables = tables.map((table) =>
+      table.serverInitials === serverInitials
+        ? {
+            ...table,
+            serverInitials: "",
+            serverColor: "",
+            showServerOnTable: false,
+          }
+        : table
+    );
+
+    setServers(nextServers);
+    setTables(nextTables);
+    syncToFirebase(nextTables, zones, true, nextServers);
+  };
+
+  const assignSelectedTableToServer = (server) => {
+    if (!selectedTableId) {
+      showMessage("Select a table first.");
+      return;
+    }
+
+    const nextTables = tables.map((table) =>
+      table.id === selectedTableId
+        ? {
+            ...table,
+            serverInitials: server.initials,
+            serverColor: server.color,
+            showServerOnTable: true,
+          }
+        : table
+    );
+
+    setTables(nextTables);
+    syncToFirebase(nextTables, zones);
+    showMessage(`Assigned to ${server.initials}.`);
+  };
+
+  const clearServerFromSelectedTable = () => {
+    if (!selectedTableId) {
+      showMessage("Select a table first.");
+      return;
+    }
+
+    const nextTables = tables.map((table) =>
+      table.id === selectedTableId
+        ? {
+            ...table,
+            serverInitials: "",
+            serverColor: "",
+            showServerOnTable: false,
+          }
+        : table
+    );
+
+    setTables(nextTables);
+    syncToFirebase(nextTables, zones);
+  };
+
+  const clearAllServerAssignments = () => {
+    const nextTables = tables.map((table) => ({
+      ...table,
+      serverInitials: "",
+      serverColor: "",
+      showServerOnTable: false,
+    }));
+
+    setTables(nextTables);
+    syncToFirebase(nextTables, zones, true);
   };
 
   const addTable = (size, guestType = "Regular", overrides = {}) => {
@@ -378,9 +531,11 @@ export default function App() {
   const loadLayout = () => {
     const savedTables = localStorage.getItem(STORAGE_KEY);
     const savedZones = localStorage.getItem(ZONES_KEY);
+    const savedServers = localStorage.getItem(SERVER_KEY);
 
     let nextTables = tables;
     let nextZones = zones;
+    let nextServers = servers;
 
     if (savedTables) {
       try {
@@ -400,12 +555,22 @@ export default function App() {
       }
     }
 
-    syncToFirebase(nextTables, nextZones, true);
+    if (savedServers) {
+      try {
+        nextServers = JSON.parse(savedServers);
+        setServers(nextServers);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    syncToFirebase(nextTables, nextZones, true, nextServers);
   };
 
   const clearSavedLayout = () => {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(ZONES_KEY);
+    localStorage.removeItem(SERVER_KEY);
     showMessage("Local backup deleted.");
   };
 
@@ -686,6 +851,108 @@ export default function App() {
           </button>
           <button className="delete-btn" onClick={clearDailySetupCounts}>
             Clear Counts
+          </button>
+        </div>
+      </div>
+
+      <div className="server-panel">
+        <div>
+          <div className="toolbar-group-label server-panel-label">
+            Daily Server Panel
+          </div>
+          <p>
+            Add only today’s servers, assign selected tables, and balance workload by tables and guests.
+          </p>
+        </div>
+
+        <div className="server-panel-grid">
+          <label>
+            Initials
+            <input
+              type="text"
+              maxLength="2"
+              value={serverInitialsInput}
+              onChange={(e) =>
+                setServerInitialsInput(e.target.value.toUpperCase().slice(0, 2))
+              }
+              placeholder="AL"
+            />
+          </label>
+
+          <label>
+            Full name
+            <input
+              type="text"
+              value={serverNameInput}
+              onChange={(e) => setServerNameInput(e.target.value)}
+              placeholder="Alyssa"
+            />
+          </label>
+
+          <label>
+            Color
+            <select
+              value={serverColorInput}
+              onChange={(e) => setServerColorInput(e.target.value)}
+            >
+              {SERVER_COLORS.filter((color) => color.value).map((color) => (
+                <option key={color.name} value={color.value}>
+                  {color.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button className="server-add-btn" onClick={addServer}>
+            Add / Update Server
+          </button>
+        </div>
+
+        <div className="server-chip-list">
+          {serverWorkloads.length === 0 && (
+            <span className="server-empty">No servers added yet.</span>
+          )}
+
+          {serverWorkloads.map((server) => (
+            <div
+              className="server-chip"
+              key={server.initials}
+              style={{ borderColor: server.color }}
+            >
+              <div className="server-chip-main">
+                <span
+                  className="server-color-dot"
+                  style={{ background: server.color }}
+                ></span>
+                <strong>{server.initials}</strong>
+                <span>{server.name}</span>
+              </div>
+
+              <div className="server-chip-stats">
+                {server.tableCount} tables · {server.guestCount} guests
+              </div>
+
+              <div className="server-chip-actions">
+                <button onClick={() => assignSelectedTableToServer(server)}>
+                  Assign selected
+                </button>
+                <button
+                  className="mini-delete-btn"
+                  onClick={() => removeServer(server.initials)}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="server-panel-actions">
+          <button className="server-clear-btn" onClick={clearServerFromSelectedTable}>
+            Clear selected server
+          </button>
+          <button className="delete-btn" onClick={clearAllServerAssignments}>
+            Clear all server assignments
           </button>
         </div>
       </div>

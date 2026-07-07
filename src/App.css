@@ -691,3 +691,142 @@ body {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 }
+
+/* DAILY SERVER PANEL */
+.server-panel {
+  margin-bottom: 14px;
+  padding: 14px;
+  background: #f8fafc;
+  border: 2px solid #cbd5e1;
+  border-radius: 16px;
+}
+
+.server-panel p {
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.server-panel-label {
+  color: #334155;
+}
+
+.server-panel-grid {
+  display: grid;
+  grid-template-columns: 100px minmax(180px, 1fr) 150px auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.server-panel-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.server-panel-grid input,
+.server-panel-grid select {
+  padding: 9px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: white;
+}
+
+.server-add-btn {
+  background: #334155 !important;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.server-chip-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.server-empty {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.server-chip {
+  background: white;
+  border: 3px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.server-chip-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #0f172a;
+}
+
+.server-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.server-chip-stats {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 700;
+}
+
+.server-chip-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.server-chip-actions button,
+.server-clear-btn {
+  border: none;
+  background: #0f172a;
+  color: white;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mini-delete-btn {
+  background: #7c2d12 !important;
+}
+
+.server-panel-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+@media (max-width: 1200px) {
+  .server-chip-list {
+    grid-template-columns: repeat(2, minmax(190px, 1fr));
+  }
+
+  .server-panel-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .server-chip-list,
+  .server-panel-grid {
+    grid-template-columns: 1fr;
+  }
+}
