@@ -5,6 +5,7 @@ import { ref, set, onValue } from "firebase/database";
 
 const REGULAR_TABLE_SIZES = [1, 2, 4, 6, 8, 10];
 const SUPER_TABLE_SIZES = [1, 2, 4];
+const LARGE_PARTY_SIZES = [14, 15, 16, 18, 19, 20, 25];
 
 const STORAGE_KEY = "hale-ohana-layout-tables";
 const ZONES_KEY = "hale-ohana-layout-zones";
@@ -50,8 +51,14 @@ function getTableStyle(size, status, guestType) {
   if (size === 4) return { ...base, width: 46, height: 46, borderRadius: "10px" };
   if (size === 6) return { ...base, width: 60, height: 38, borderRadius: "10px" };
   if (size === 8) return { ...base, width: 70, height: 42, borderRadius: "10px" };
+  if (size === 10) return { ...base, width: 84, height: 46, borderRadius: "10px" };
 
-  return { ...base, width: 84, height: 46, borderRadius: "10px" };
+  return {
+    ...base,
+    width: Math.min(180, 85 + size * 4),
+    height: 52,
+    borderRadius: "12px",
+  };
 }
 
 export default function App() {
@@ -65,6 +72,7 @@ export default function App() {
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [regularCustomSize, setRegularCustomSize] = useState("");
   const [superCustomSize, setSuperCustomSize] = useState("");
+  const [largePartyCustomSize, setLargePartyCustomSize] = useState("");
   const floorRef = useRef(null);
 
   const layoutRef = ref(db, FIREBASE_LAYOUT_PATH);
@@ -148,6 +156,9 @@ export default function App() {
     const newTable = {
       id,
       size: normalizedSize,
+      partySize: normalizedSize,
+      serverInitials: "",
+      bookedName: "",
       x: 520,
       y: 300,
       status: "available",
@@ -172,6 +183,15 @@ export default function App() {
     setSuperCustomSize("");
   };
 
+  const addLargePartyTable = (size, guestType = "Regular") => {
+    addTable(size, guestType);
+  };
+
+  const addCustomLargeParty = () => {
+    addLargePartyTable(largePartyCustomSize, "Regular");
+    setLargePartyCustomSize("");
+  };
+
   const updateSelectedTable = (field, value) => {
     if (!selectedTableId) return;
 
@@ -185,7 +205,8 @@ export default function App() {
 
   const useInitialsForSelected = () => {
     if (!selectedTable) return;
-    updateSelectedTable("shortLabel", getInitials(selectedTable.fullName));
+    const nameToUse = selectedTable.bookedName || selectedTable.fullName;
+    updateSelectedTable("shortLabel", getInitials(nameToUse));
   };
 
   const clearGuestInfo = () => {
@@ -196,7 +217,9 @@ export default function App() {
         ? {
             ...table,
             fullName: "",
+            bookedName: "",
             shortLabel: "",
+            serverInitials: "",
             guestType: "Regular",
           }
         : table
@@ -261,6 +284,22 @@ export default function App() {
     if (selectedTableId === id) {
       setSelectedTableId(null);
     }
+    syncToFirebase(nextTables, zones);
+  };
+
+  const duplicateSelectedTable = () => {
+    if (!selectedTable) return;
+
+    const duplicated = {
+      ...selectedTable,
+      id: Date.now() + Math.random(),
+      x: selectedTable.x + 30,
+      y: selectedTable.y + 30,
+    };
+
+    const nextTables = [...tables, duplicated];
+    setTables(nextTables);
+    setSelectedTableId(duplicated.id);
     syncToFirebase(nextTables, zones);
   };
 
@@ -358,7 +397,7 @@ export default function App() {
       <div className="page-title-wrap">
         <h1 className="page-title">Hale Ohana Seating Layout</h1>
         <p className="page-subtitle">
-          Regular tables on top, Super tables below, then live controls.
+          Regular tables on top, Super tables below, large parties, then live controls.
         </p>
       </div>
 
@@ -416,16 +455,43 @@ export default function App() {
         </div>
       </div>
 
+      <div className="toolbar-row">
+        <div className="toolbar-group-label large-party-label">Large Parties</div>
+        <div className="toolbar">
+          {LARGE_PARTY_SIZES.map((size) => (
+            <button
+              key={`large-${size}`}
+              className="large-party-btn"
+              onClick={() => addLargePartyTable(size, "Regular")}
+            >
+              +{size}
+            </button>
+          ))}
+
+          <input
+            className="custom-size-input large-party-input"
+            type="number"
+            min="1"
+            placeholder="Party"
+            value={largePartyCustomSize}
+            onChange={(e) => setLargePartyCustomSize(e.target.value)}
+          />
+          <button className="large-party-btn" onClick={addCustomLargeParty}>
+            + Large
+          </button>
+        </div>
+      </div>
+
       <div className="controls-row">
         <div className="legend">
           <span className="legend-item">
-            <span className="dot green"></span> Available
+            <span className="dot green"></span> Regular Available
           </span>
           <span className="legend-item">
-            <span className="dot red"></span> Occupied
+            <span className="dot red"></span> Regular Occupied
           </span>
           <span className="legend-item">
-            <span className="dot super-dot"></span> Super guest
+            <span className="dot super-dot"></span> Super Available
           </span>
           <span className="hint">
             {editingZones
@@ -456,18 +522,19 @@ export default function App() {
       {selectedTable && (
         <div className="editor-panel">
           <div className="editor-title">
-            Editing table {selectedTable.size}
+            Editing table / party {selectedTable.partySize || selectedTable.size}
           </div>
 
           <div className="editor-grid">
             <label>
-              Full guest name
+              Booked under / full guest name
               <input
                 type="text"
-                value={selectedTable.fullName}
-                onChange={(e) =>
-                  updateSelectedTable("fullName", e.target.value)
-                }
+                value={selectedTable.bookedName || selectedTable.fullName || ""}
+                onChange={(e) => {
+                  updateSelectedTable("bookedName", e.target.value);
+                  updateSelectedTable("fullName", e.target.value);
+                }}
                 placeholder="Anderson Belcher"
               />
             </label>
@@ -484,6 +551,35 @@ export default function App() {
                   )
                 }
                 placeholder="AB"
+              />
+            </label>
+
+            <label>
+              Party size
+              <input
+                type="number"
+                min="1"
+                value={selectedTable.partySize || selectedTable.size}
+                onChange={(e) => {
+                  updateSelectedTable("partySize", Number(e.target.value));
+                  updateSelectedTable("size", Number(e.target.value));
+                }}
+              />
+            </label>
+
+            <label>
+              Server initials
+              <input
+                type="text"
+                maxLength="2"
+                value={selectedTable.serverInitials || ""}
+                onChange={(e) =>
+                  updateSelectedTable(
+                    "serverInitials",
+                    e.target.value.toUpperCase().slice(0, 2)
+                  )
+                }
+                placeholder="JD"
               />
             </label>
 
@@ -516,6 +612,7 @@ export default function App() {
 
           <div className="editor-actions">
             <button onClick={useInitialsForSelected}>Use Initials</button>
+            <button onClick={duplicateSelectedTable}>Duplicate</button>
             <button onClick={clearGuestInfo}>Clear Guest Info</button>
             <button onClick={() => setSelectedTableId(null)}>Done</button>
           </div>
@@ -611,9 +708,15 @@ export default function App() {
                 e.preventDefault();
                 deleteTable(table.id);
               }}
-              title={table.fullName || `Table ${table.size}`}
+              title={table.bookedName || table.fullName || `Party ${table.partySize || table.size}`}
             >
-              {table.shortLabel || table.size}
+              <span className="table-label-main">
+                {table.shortLabel || table.size}
+              </span>
+              <span className="table-label-sub">
+                {table.partySize || table.size}p
+                {table.serverInitials ? ` · ${table.serverInitials}` : ""}
+              </span>
             </div>
           ))}
         </div>
