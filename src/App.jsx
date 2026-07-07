@@ -11,6 +11,17 @@ const STORAGE_KEY = "hale-ohana-layout-tables";
 const ZONES_KEY = "hale-ohana-layout-zones";
 const FIREBASE_LAYOUT_PATH = "layouts/main";
 
+const SERVER_COLORS = [
+  { name: "None", value: "" },
+  { name: "Blue", value: "#2563eb" },
+  { name: "Purple", value: "#7c3aed" },
+  { name: "Pink", value: "#ec4899" },
+  { name: "Orange", value: "#f97316" },
+  { name: "Teal", value: "#0d9488" },
+  { name: "Gold", value: "#ca8a04" },
+  { name: "Black", value: "#111827" },
+];
+
 const DEFAULT_ZONES = [
   { id: "hibiscus", label: "Hibiscus", x: 30, y: 140, width: 330, height: 190, rotate: -10 },
   { id: "bop", label: "BOP", x: 40, y: 280, width: 380, height: 150, rotate: -14 },
@@ -32,7 +43,7 @@ function getInitials(name) {
     .join("");
 }
 
-function getTableStyle(size, status, guestType) {
+function getTableStyle(size, status, guestType, serverColor) {
   let fill;
 
   if (guestType === "Regular") {
@@ -43,7 +54,10 @@ function getTableStyle(size, status, guestType) {
 
   const base = {
     background: fill,
-    border: "2px solid rgba(255,255,255,0.95)",
+    border: `2px solid ${serverColor || "rgba(255,255,255,0.95)"}`,
+    boxShadow: serverColor
+      ? `0 0 0 3px ${serverColor}, 0 6px 14px rgba(0, 0, 0, 0.18)`
+      : "0 6px 14px rgba(0, 0, 0, 0.18)",
   };
 
   if (size === 1) return { ...base, width: 28, height: 28, borderRadius: "50%" };
@@ -55,8 +69,8 @@ function getTableStyle(size, status, guestType) {
 
   return {
     ...base,
-    width: Math.min(180, 85 + size * 4),
-    height: 52,
+    width: Math.min(190, 90 + size * 4),
+    height: 58,
     borderRadius: "12px",
   };
 }
@@ -70,14 +84,35 @@ export default function App() {
   const [activeZoneId, setActiveZoneId] = useState(null);
   const [zoneMode, setZoneMode] = useState(null);
   const [selectedTableId, setSelectedTableId] = useState(null);
+
   const [regularCustomSize, setRegularCustomSize] = useState("");
   const [superCustomSize, setSuperCustomSize] = useState("");
-  const [largePartyCustomSize, setLargePartyCustomSize] = useState("");
+
+  const [builderPartySize, setBuilderPartySize] = useState("20");
+  const [builderPhysicalTables, setBuilderPhysicalTables] = useState("3");
+  const [builderBookedName, setBuilderBookedName] = useState("");
+  const [builderShortLabel, setBuilderShortLabel] = useState("");
+  const [builderServerInitials, setBuilderServerInitials] = useState("");
+  const [builderGuestType, setBuilderGuestType] = useState("Regular");
+  const [builderServerColor, setBuilderServerColor] = useState("");
+  const [builderShowServer, setBuilderShowServer] = useState(false);
+  const [builderShowTableCount, setBuilderShowTableCount] = useState(false);
+
   const floorRef = useRef(null);
+  const latestTablesRef = useRef([]);
+  const latestZonesRef = useRef(DEFAULT_ZONES);
 
   const layoutRef = ref(db, FIREBASE_LAYOUT_PATH);
   const isInteractingRef = useRef(false);
   const ignoreNextRemoteRef = useRef(false);
+
+  useEffect(() => {
+    latestTablesRef.current = tables;
+  }, [tables]);
+
+  useEffect(() => {
+    latestZonesRef.current = zones;
+  }, [zones]);
 
   useEffect(() => {
     const savedTables = localStorage.getItem(STORAGE_KEY);
@@ -147,7 +182,7 @@ export default function App() {
     }
   };
 
-  const addTable = (size, guestType = "Regular") => {
+  const addTable = (size, guestType = "Regular", overrides = {}) => {
     const normalizedSize = Number(size);
     if (!normalizedSize || normalizedSize < 1) return;
 
@@ -157,7 +192,11 @@ export default function App() {
       id,
       size: normalizedSize,
       partySize: normalizedSize,
+      physicalTables: 1,
       serverInitials: "",
+      serverColor: "",
+      showServerOnTable: false,
+      showTableCountOnTable: false,
       bookedName: "",
       x: 520,
       y: 300,
@@ -165,6 +204,7 @@ export default function App() {
       fullName: "",
       shortLabel: "",
       guestType,
+      ...overrides,
     };
 
     const nextTables = [...tables, newTable];
@@ -183,13 +223,33 @@ export default function App() {
     setSuperCustomSize("");
   };
 
-  const addLargePartyTable = (size, guestType = "Regular") => {
-    addTable(size, guestType);
-  };
+  const createLargeParty = () => {
+    const partySize = Number(builderPartySize);
+    const physicalTables = Number(builderPhysicalTables);
 
-  const addCustomLargeParty = () => {
-    addLargePartyTable(largePartyCustomSize, "Regular");
-    setLargePartyCustomSize("");
+    if (!partySize || partySize < 1) {
+      showMessage("Enter a valid party size.");
+      return;
+    }
+
+    const bookedName = builderBookedName.trim();
+    const shortLabel =
+      builderShortLabel.trim().toUpperCase().slice(0, 4) ||
+      getInitials(bookedName);
+
+    addTable(partySize, builderGuestType, {
+      partySize,
+      physicalTables: physicalTables || 1,
+      bookedName,
+      fullName: bookedName,
+      shortLabel,
+      serverInitials: builderServerInitials.toUpperCase().slice(0, 2),
+      serverColor: builderServerColor,
+      showServerOnTable: builderShowServer,
+      showTableCountOnTable: builderShowTableCount,
+    });
+
+    showMessage("Large party created.");
   };
 
   const updateSelectedTable = (field, value) => {
@@ -220,6 +280,9 @@ export default function App() {
             bookedName: "",
             shortLabel: "",
             serverInitials: "",
+            serverColor: "",
+            showServerOnTable: false,
+            showTableCountOnTable: false,
             guestType: "Regular",
           }
         : table
@@ -281,9 +344,7 @@ export default function App() {
   const deleteTable = (id) => {
     const nextTables = tables.filter((table) => table.id !== id);
     setTables(nextTables);
-    if (selectedTableId === id) {
-      setSelectedTableId(null);
-    }
+    if (selectedTableId === id) setSelectedTableId(null);
     syncToFirebase(nextTables, zones);
   };
 
@@ -387,7 +448,7 @@ export default function App() {
 
     if (finishedDraggingTable || finishedEditingZone) {
       setTimeout(() => {
-        syncToFirebase(tables, zones);
+        syncToFirebase(latestTablesRef.current, latestZonesRef.current);
       }, 0);
     }
   };
@@ -397,7 +458,7 @@ export default function App() {
       <div className="page-title-wrap">
         <h1 className="page-title">Hale Ohana Seating Layout</h1>
         <p className="page-subtitle">
-          Regular tables on top, Super tables below, large parties, then live controls.
+          Regular, Supers, large parties, server colors, and live seating controls.
         </p>
       </div>
 
@@ -405,26 +466,13 @@ export default function App() {
         <div className="toolbar-group-label">Regular</div>
         <div className="toolbar">
           {REGULAR_TABLE_SIZES.map((size) => (
-            <button
-              key={`regular-${size}`}
-              className="regular-btn"
-              onClick={() => addTable(size, "Regular")}
-            >
+            <button key={`regular-${size}`} className="regular-btn" onClick={() => addTable(size, "Regular")}>
               +{size}
             </button>
           ))}
 
-          <input
-            className="custom-size-input"
-            type="number"
-            min="1"
-            placeholder="Custom"
-            value={regularCustomSize}
-            onChange={(e) => setRegularCustomSize(e.target.value)}
-          />
-          <button className="regular-btn" onClick={addCustomRegularTable}>
-            + Custom
-          </button>
+          <input className="custom-size-input" type="number" min="1" placeholder="Custom" value={regularCustomSize} onChange={(e) => setRegularCustomSize(e.target.value)} />
+          <button className="regular-btn" onClick={addCustomRegularTable}>+ Custom</button>
         </div>
       </div>
 
@@ -432,67 +480,96 @@ export default function App() {
         <div className="toolbar-group-label toolbar-group-label-super">Supers</div>
         <div className="toolbar">
           {SUPER_TABLE_SIZES.map((size) => (
-            <button
-              key={`super-${size}`}
-              className="super-btn"
-              onClick={() => addTable(size, "Super")}
-            >
+            <button key={`super-${size}`} className="super-btn" onClick={() => addTable(size, "Super")}>
               +{size}
             </button>
           ))}
 
-          <input
-            className="custom-size-input super-input"
-            type="number"
-            min="1"
-            placeholder="Custom"
-            value={superCustomSize}
-            onChange={(e) => setSuperCustomSize(e.target.value)}
-          />
-          <button className="super-btn" onClick={addCustomSuperTable}>
-            + Custom
-          </button>
+          <input className="custom-size-input super-input" type="number" min="1" placeholder="Custom" value={superCustomSize} onChange={(e) => setSuperCustomSize(e.target.value)} />
+          <button className="super-btn" onClick={addCustomSuperTable}>+ Custom</button>
         </div>
       </div>
 
-      <div className="toolbar-row">
-        <div className="toolbar-group-label large-party-label">Large Parties</div>
-        <div className="toolbar">
+      <div className="large-party-builder">
+        <div className="large-party-builder-header">
+          <div>
+            <div className="toolbar-group-label large-party-label">Large Party Builder</div>
+            <p>Create one clean group block, with optional server/table-count display.</p>
+          </div>
+        </div>
+
+        <div className="large-party-presets">
           {LARGE_PARTY_SIZES.map((size) => (
-            <button
-              key={`large-${size}`}
-              className="large-party-btn"
-              onClick={() => addLargePartyTable(size, "Regular")}
-            >
-              +{size}
+            <button key={`large-${size}`} className="large-party-btn" onClick={() => setBuilderPartySize(String(size))}>
+              {size}p
             </button>
           ))}
+        </div>
 
-          <input
-            className="custom-size-input large-party-input"
-            type="number"
-            min="1"
-            placeholder="Party"
-            value={largePartyCustomSize}
-            onChange={(e) => setLargePartyCustomSize(e.target.value)}
-          />
-          <button className="large-party-btn" onClick={addCustomLargeParty}>
-            + Large
-          </button>
+        <div className="large-party-grid">
+          <label>
+            Party size
+            <input type="number" min="1" value={builderPartySize} onChange={(e) => setBuilderPartySize(e.target.value)} />
+          </label>
+
+          <label>
+            Physical tables
+            <input type="number" min="1" value={builderPhysicalTables} onChange={(e) => setBuilderPhysicalTables(e.target.value)} />
+          </label>
+
+          <label>
+            Booked name
+            <input type="text" value={builderBookedName} onChange={(e) => setBuilderBookedName(e.target.value)} placeholder="Anderson Belcher" />
+          </label>
+
+          <label>
+            Initials
+            <input type="text" maxLength="4" value={builderShortLabel} onChange={(e) => setBuilderShortLabel(e.target.value.toUpperCase().slice(0, 4))} placeholder="AB" />
+          </label>
+
+          <label>
+            Server
+            <input type="text" maxLength="2" value={builderServerInitials} onChange={(e) => setBuilderServerInitials(e.target.value.toUpperCase().slice(0, 2))} placeholder="JD" />
+          </label>
+
+          <label>
+            Type
+            <select value={builderGuestType} onChange={(e) => setBuilderGuestType(e.target.value)}>
+              <option>Regular</option>
+              <option>Super</option>
+            </select>
+          </label>
+
+          <label>
+            Server color
+            <select value={builderServerColor} onChange={(e) => setBuilderServerColor(e.target.value)}>
+              {SERVER_COLORS.map((color) => (
+                <option key={color.name} value={color.value}>{color.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="large-party-options">
+          <label>
+            <input type="checkbox" checked={builderShowServer} onChange={(e) => setBuilderShowServer(e.target.checked)} />
+            Show server on table
+          </label>
+
+          <label>
+            <input type="checkbox" checked={builderShowTableCount} onChange={(e) => setBuilderShowTableCount(e.target.checked)} />
+            Show table count on table
+          </label>
+
+          <button className="large-party-btn" onClick={createLargeParty}>Create Large Party</button>
         </div>
       </div>
 
       <div className="controls-row">
         <div className="legend">
-          <span className="legend-item">
-            <span className="dot green"></span> Regular Available
-          </span>
-          <span className="legend-item">
-            <span className="dot red"></span> Regular Occupied
-          </span>
-          <span className="legend-item">
-            <span className="dot super-dot"></span> Super Available
-          </span>
+          <span className="legend-item"><span className="dot green"></span> Regular Available</span>
+          <span className="legend-item"><span className="dot red"></span> Regular Occupied</span>
+          <span className="legend-item"><span className="dot super-dot"></span> Super Available</span>
           <span className="hint">
             {editingZones
               ? "Zone mode: drag body to move, blue square to resize, yellow circle to rotate"
@@ -503,27 +580,18 @@ export default function App() {
         <div className="toolbar toolbar-actions">
           <button onClick={saveLayout}>Save Live</button>
           <button onClick={loadLayout}>Load Local</button>
-          <button
-            className="zone-btn"
-            onClick={() => setEditingZones((prev) => !prev)}
-          >
+          <button className="zone-btn" onClick={() => setEditingZones((prev) => !prev)}>
             {editingZones ? "Done Editing Zones" : "Edit Zones"}
           </button>
           <button onClick={resetZones}>Reset Zones</button>
-          <button className="reset-btn" onClick={resetLayout}>
-            Reset Tables
-          </button>
-          <button className="delete-btn" onClick={clearSavedLayout}>
-            Clear Local
-          </button>
+          <button className="reset-btn" onClick={resetLayout}>Reset Tables</button>
+          <button className="delete-btn" onClick={clearSavedLayout}>Clear Local</button>
         </div>
       </div>
 
       {selectedTable && (
         <div className="editor-panel">
-          <div className="editor-title">
-            Editing table / party {selectedTable.partySize || selectedTable.size}
-          </div>
+          <div className="editor-title">Editing party {selectedTable.partySize || selectedTable.size}</div>
 
           <div className="editor-grid">
             <label>
@@ -544,12 +612,7 @@ export default function App() {
               <input
                 type="text"
                 value={selectedTable.shortLabel}
-                onChange={(e) =>
-                  updateSelectedTable(
-                    "shortLabel",
-                    e.target.value.toUpperCase().slice(0, 4)
-                  )
-                }
+                onChange={(e) => updateSelectedTable("shortLabel", e.target.value.toUpperCase().slice(0, 4))}
                 placeholder="AB"
               />
             </label>
@@ -568,29 +631,38 @@ export default function App() {
             </label>
 
             <label>
+              Physical tables
+              <input
+                type="number"
+                min="1"
+                value={selectedTable.physicalTables || 1}
+                onChange={(e) => updateSelectedTable("physicalTables", Number(e.target.value))}
+              />
+            </label>
+
+            <label>
               Server initials
               <input
                 type="text"
                 maxLength="2"
                 value={selectedTable.serverInitials || ""}
-                onChange={(e) =>
-                  updateSelectedTable(
-                    "serverInitials",
-                    e.target.value.toUpperCase().slice(0, 2)
-                  )
-                }
+                onChange={(e) => updateSelectedTable("serverInitials", e.target.value.toUpperCase().slice(0, 2))}
                 placeholder="JD"
               />
             </label>
 
             <label>
+              Server color
+              <select value={selectedTable.serverColor || ""} onChange={(e) => updateSelectedTable("serverColor", e.target.value)}>
+                {SERVER_COLORS.map((color) => (
+                  <option key={color.name} value={color.value}>{color.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
               Guest type
-              <select
-                value={selectedTable.guestType}
-                onChange={(e) =>
-                  updateSelectedTable("guestType", e.target.value)
-                }
-              >
+              <select value={selectedTable.guestType} onChange={(e) => updateSelectedTable("guestType", e.target.value)}>
                 <option>Regular</option>
                 <option>Super</option>
               </select>
@@ -598,19 +670,32 @@ export default function App() {
 
             <label>
               Status
-              <select
-                value={selectedTable.status}
-                onChange={(e) =>
-                  updateSelectedTable("status", e.target.value)
-                }
-              >
+              <select value={selectedTable.status} onChange={(e) => updateSelectedTable("status", e.target.value)}>
                 <option value="available">Available</option>
                 <option value="occupied">Occupied</option>
               </select>
             </label>
           </div>
 
-          <div className="editor-actions">
+          <div className="editor-actions editor-checks">
+            <label>
+              <input
+                type="checkbox"
+                checked={!!selectedTable.showServerOnTable}
+                onChange={(e) => updateSelectedTable("showServerOnTable", e.target.checked)}
+              />
+              Show server
+            </label>
+
+            <label>
+              <input
+                type="checkbox"
+                checked={!!selectedTable.showTableCountOnTable}
+                onChange={(e) => updateSelectedTable("showTableCountOnTable", e.target.checked)}
+              />
+              Show table count
+            </label>
+
             <button onClick={useInitialsForSelected}>Use Initials</button>
             <button onClick={duplicateSelectedTable}>Duplicate</button>
             <button onClick={clearGuestInfo}>Clear Guest Info</button>
@@ -622,13 +707,7 @@ export default function App() {
       {message && <div className="message">{message}</div>}
 
       <div className="floor-shell">
-        <div
-          className="floor"
-          ref={floorRef}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
-        >
+        <div className="floor" ref={floorRef} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}>
           <div className="fixed cr">CR</div>
           <div className="fixed stage">Stage</div>
           <div className="fixed food">Back Kitchen</div>
@@ -687,11 +766,9 @@ export default function App() {
           {tables.map((table) => (
             <div
               key={table.id}
-              className={`table ${
-                selectedTableId === table.id ? "table-selected" : ""
-              }`}
+              className={`table ${selectedTableId === table.id ? "table-selected" : ""}`}
               style={{
-                ...getTableStyle(table.size, table.status, table.guestType),
+                ...getTableStyle(table.size, table.status, table.guestType, table.serverColor),
                 left: `${table.x}px`,
                 top: `${table.y}px`,
               }}
@@ -710,13 +787,15 @@ export default function App() {
               }}
               title={table.bookedName || table.fullName || `Party ${table.partySize || table.size}`}
             >
-              <span className="table-label-main">
-                {table.shortLabel || table.size}
-              </span>
-              <span className="table-label-sub">
-                {table.partySize || table.size}p
-                {table.serverInitials ? ` · ${table.serverInitials}` : ""}
-              </span>
+              <span className="table-label-main">{table.shortLabel || table.size}</span>
+              <span className="table-label-sub">{table.partySize || table.size}p</span>
+              {(table.showServerOnTable || table.showTableCountOnTable) && (
+                <span className="table-label-extra">
+                  {table.showTableCountOnTable ? `${table.physicalTables || 1}T` : ""}
+                  {table.showTableCountOnTable && table.showServerOnTable && table.serverInitials ? " · " : ""}
+                  {table.showServerOnTable ? table.serverInitials : ""}
+                </span>
+              )}
             </div>
           ))}
         </div>
